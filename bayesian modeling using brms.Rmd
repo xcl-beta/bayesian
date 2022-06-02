@@ -1,0 +1,580 @@
+---
+title: "Bayesian Modeling using brms"
+subtitle: ""
+author:  Xiaochuan Li
+institute: 
+date: "`r Sys.Date()`"
+output:
+  xaringan::moon_reader:
+    css: [default, nhsr, nhsr-fonts, my_theme] 
+    lib_dir: libs
+    seal: false
+    nature:
+      ratio: '16:9'
+      highlightStyle: github
+      highlightLines: true
+      countIncrementalSlides: false
+
+---
+
+class: left, middle
+
+# Bayesian Analysis using Stan and brms
+ 
+`r Sys.Date()`
+
+
+
+<style>
+.forceBreak { -webkit-column-break-after: always; break-after: column; }
+ 
+</style>
+
+???
+
+https://community.rstudio.com/t/using-multiple-font-sizes-for-code-chunks/26405
+
+---
+layout: true
+
+background-image: url('logo_RGA_red.jpg')
+background-position: 3% 97%
+background-size: 5%  
+
+---
+ 
+
+```{r setup, include=FALSE}
+#knitr::opts_chunk$set(echo = FALSE) # AnnArbor
+
+# Note: for more Markdown setup options, see https://bookdown.org/yihui/rmarkdown/ioslides-presentation.html
+
+library(knitr)
+knitr::opts_chunk$set(comment = "", eval=TRUE, echo=F, message=FALSE, warning=FALSE, results='asis', tidy= FALSE,  fig.align="center",fig.env='figure', strip.white=TRUE)
+
+
+options(scipen=999, digits=8) #removes scientific notation and sets the number of decimal places
+par(mar=c(2,2,1,0), oma=c(.2,.2,.2,0), mgp=c(2,.75,0))	#bottom,left,top,right; mar is within each plot; oma is within the frame; mgp is margin line for c(axis title, axis label, axis line)
+
+options(servr.daemon = TRUE)
+# # Set so that long lines in R will be wrapped:
+# opts_chunk$set(tidy.opts=list(width.cutoff=50),tidy=TRUE)
+
+options(servr.interval = 0.4)
+
+```
+
+```{r,echo=FALSE,message=FALSE,warning=FALSE}
+library(ggplot2)
+library(pander)
+library(data.table)
+
+library(gridExtra )
+library(lattice)
+library(dplyr) # for data manipulation
+library(caret) # for model-building
+#library(DMwR) # for smote implementation
+library(purrr) # for functional programming (map)
+ 
+library(icons)
+
+library(brms)
+library(bayesplot)
+
+```
+
+## Agenda 
+
+<font size="6">
+
++ Bayesian Analysis
+
+ 
+
++ Software
+
+ 
+
++ brms
+
+ 
++ Examples 
+
+ 
+---
+
+### Frequentist vs. Bayesian analysis
+
+<font size="5">
+
++ Frequentist Statistics
+
+  - highest probability of seeing the data given (conditional on) the underlying model
+  
+--
+
++ Bayesian Statistics
+
+  - Which model, or set of parameter values, are most certain to be the true model
+
+  - Bayes' Theorem
+  
+ 
+$$
+P(A|B) = \frac{P(B|A)*P(A)}{P(B)}
+$$
+
+<img src="C:/Users/S0041359/Documents/R/bayesian/bayesdemo_01.png", width = "30%"> 
+
+
+???
+
+P(A) - prior info
+P(B|A) - likelihood 
+P(B) - marginal , probability of observing the event
+P(A|B) - posterior
+
+---
+
+### Why use Bayesain analysis
+
+
++ Prior Information
+
++ Hierarchical Models
+
++ more interpretable confidence intervals
+
++ Limited Data
+
+  - Prior distribution over the parameters can act as a regularization to prevent unlikely extreme values
+
+
+???
+
+https://towardsdatascience.com/when-to-use-bayesian-8723c818b742
+
+
+
+ In the hierarchical model, there are multiple levels of random variables. A benefit of the hierarchical approach is that you can model properties of all of the clusters, even if there are very few data points from a given cluster. hierarchical model is more resistant to outliers and limited data than creating separate models for every cluster.
+ 
+ Frequentist approaches to hierarchical linear models might look for the mode of the posterior distribution, which, often in hierarchical models, can be on the edge or boundary of the posterior spac
+ 
+ 
+ obtain a whole posterior distribution and we can compute more appropriate (for a complex distribution) statistics like mean, median, and 95% credibility intervals.
+
+
+=============
+limit data 
+
+a prior distribution over the parameters can act as a regularization to prevent unlikely extreme values.
+
+=============
+credible intervals: I am 95% sure that parameter θ is between 2.2 and 3.6.”
+
+frequentist: in a large number of repeated samples, the similarly calculated intervals as ours between 1.7 and 3.4 would contain the true value 95% of the time
+
+---
+
+### Software
+
+<font size="5">
+
+R interface
+
++ lme4, rethinking::quap - Quadratic approximation  
+
++ BUG, JAGS - Gibbs sampling 
+
++ STAN - Hamiltonian Sampling  
+
+
+Python interface
+
++ PyMc3 - Hamiltonian Monte Carlo
+
++ Pytorch::Pyro - Bayesian statistical models and Neural Networks
+
+
+
+
+???
+
+the likelihood function of the posterial distribution does not  
+have closed form solution
+a quadratic approximation to the logarithm of the
+unscaled conditional density, can be written as a penalized, weighted
+residual sum of squares, parameters determined by iteratively
+reweighted least squares (IRLS
+
+
+---
+
+
+### Stan 
+
+Linear model 
+
+$$
+log(y_i) \sim N(b_0 + b_1log(x_i), \sigma^2 )
+$$
+
+
+.pull-left[
+
+data block
+
+
+```{r, eval=FALSE, tidy=FALSE, echo=T}
+
+data {
+  int<lower=1> N;       // number of observations
+  vector[N] log_gest;    // log gestational age
+  vector[N] log_weight;     // log birth weight
+}
+
+```
+
+
+parameters block 
+
+```{r, eval=FALSE, tidy=T, echo=T, class= 'xsmall'}
+parameters {
+  vector[2] beta;           // coefs
+  real<lower=0> sigma;  // error sd for Gaussian likelihood
+}
+
+```
+
+]
+
+.pull-right[
+
+
+model block
+
+```{r, eval=FALSE, tidy=FALSE, echo=T}
+model {
+  // Log-likelihood
+  target += normal_lpdf(log_weight | beta[1] + beta[2] * log_gest, sigma);
+  // Log-priors
+  target += normal_lpdf(sigma | 0, 1)
+          + normal_lpdf(beta | 0, 1);
+}
+
+```
+
+generated quantities block
+
+```{r, eval=FALSE, tidy=FALSE, echo=T}
+generated quantities {
+  vector[N] log_lik;    // pointwise log-likelihood for LOO
+  vector[N] log_weight_rep; // replications from posterior predictive dist
+  for (n in 1:N) {
+    real log_weight_hat_n = beta[1] + beta[2] * log_gest[n];
+    log_lik[n] = normal_lpdf(log_weight[n] | log_weight_hat_n, sigma);
+    log_weight_rep[n] = normal_rng(log_weight_hat_n, sigma);
+  }
+}
+```
+
+]
+
+
+???
+
+https://www.monicaalexander.com/posts/2020-28-02-bayes_viz/?utm_source=pocket_mylist
+
+generated quantities block:calculate posterior probabilities and log likelihoods, and predictions
+
+---
+
+### brms
+
+brms provides an interface to fit Bayesian generalized (non-)linear multivariate multilevel models using Stan.
+
++ brms ---> Stan ---> C++
+
+<img src="C:/Users/S0041359/Documents/R/bayesian/brms procecss.png", width = "80%"> 
+
++ Domino environment: DAD_STAN
+
+
+
+
+
+
+---
+
+
+### brms formula
+
+ 
+```{r, eval=FALSE, tidy=TRUE, echo=T}
+
+fit1 <- brm(formula = time | cens(censored) ~ age * sex + disease + (1 + age|patient),
+                      data = kidney, family = lognormal(),
+                      prior = c(set_prior("normal(0,5)", class = "b"),
+                      set_prior("cauchy(0,2)", class = "sd"),
+                      set_prior("lkj(2)", class = "cor")),
+                      warmup = 1000, iter = 2000, chains = 4,
+                      control = list(adapt_delta = 0.95))
+
+```
+ 
+ 
++ formula syntax matches that of lme4
+
++ form | fun(variable)
+  - cens: handles censored data
+  - weights and disp:  allow different sorts of weighting
+  - se: specify known standard errors primarily for meta-analysis
+  - trunc：define truncation boundaries
+  - trials： for binomial models 
+  - cat：specify the number of categories for ordinal models
+
++ Group-level terms are of the form (coefs | group)
+
+
+
+  
+ 
+???
+
+Notes: notes 
+---
+
+### brms family 
+
++ Linear and robust linear regression: gaussian or student family with the identity link
+
++ categorical  - bernoulli, binomial, and categorical with logit link
+
++ count data  - poisson, negbinomial, and geometric
+
++ survival regression - lognormal, Gamma, exponential, and weibull
+
++ Ordinal regression - cumulative, cratio, sratio, and acat
+
++ Excess zeros response - zero_inflated_poisson, zero_inflated_negbinomial, zero_inflated_binomial, zero_inflated_beta, hurdle_poisson,  hurdle_negbinomial, and hurdle_gamma
+
++ Specify custom families to include more distributions 
+
+---
+
+### brms parameters 
+
++ prior: Prior distributions of model parameters
+
+ 
+```{r, eval=FALSE, tidy=F, echo=T}
+
+prior <- c(set_prior("normal(0,10)", class = "b", coef = "age"),
+            set_prior("cauchy(1,2)", class = "b", coef = "sexfemale"),
+            set_prior("student_t(3,0,5)", class = "sd", group="patient"))
+
+```
+ 
++ control: Adjusting the sampling behavior of Stan
+  - choosing the number of iterations, warmup samples, and chains,
+
+  - decrease (or eliminate at best) the number of divergent transitions that cause a bias in the obtained posterior samples. "There were x divergent transitions after warmup."
+  
+ 
+  
+  
+---
+
+### Check Posterior distribtion  
+
+Posterior distribtion of parameters and chain convergence need to be checked
+ 
+
+```{r, echo=F}
+
+
+load("C:/Users/S0041359/Documents/R/bayesian/fit1.Rdata")
+
+
+plot(fit1, variable = names(fit1$fit@sim$samples[[1]])[1:3] ,ask = F)
+
+```
+
+---
+## Example
+### non-linear model to model insurance loss
+
++ Data
+
+<img src="C:/Users/S0041359/Documents/R/bayesian/cumloss_year.png", width = "80%"> 
+
+
++ Model 
+
+$$cum_{AY,dev} \sim N(\mu_{AY,dev},\sigma) \\
+\mu_{AY,dev} = ult_{AY}(1 - exp(-( \frac{dev}{\theta})^w))$$
+
+???
+from brms Vignettes
+
+---
+
+### Prior parameter distributions 
+
+.left-column[
+
++ Prior parameter distribution 
+
+$$\phi \sim N(0.25,0.25^2)^+ \\
+\omega \sim N(1.25,0.25^2)^+ \\
+\gamma \sim logN(log(0.5),log(1.2)^2) \\
+\sigma \sim Student-t(5,0,0.25)^+ \\
+\sigma_{\gamma^0} \sim Student-t(5,0,0.25)^+$$
+]
+
+
+
+
+.right-column[
+
+```{r, echo=F}
+library(data.table)
+ 
+url <- "https://raw.githubusercontent.com/mages/diesunddas/master/Data/ClarkTriangle.csv"
+loss <- fread(url)
+
+load("C:/Users/S0041359/Documents/R/bayesian/m2.Rdata")
+
+
+
+
+bayesplot::bayesplot_theme_update(text = element_text(family = "sans"))
+
+mcmc_areas(
+  as.array(m2), 
+  pars = c("b_ulr_Intercept", "b_omega_Intercept",
+           "b_phi_Intercept",
+           "sd_AY__ulr_Intercept", "sigma"),
+  prob = 0.8, # 80% intervals
+  prob_outer = 0.99, # 99%
+  point_est = "mean"
+) + ggplot2::labs(
+  title = "Prior parameter distributions",
+  subtitle = "with medians and 80% intervals"
+)
+
+ 
+
+```
+
+]
+
+
+---
+### Estimate on Prior predictive distribution
+
+```{r, echo=F}
+
+
+conditions <- data.frame(AY = unique(loss$AY))
+rownames(conditions) <- unique(loss$AY)
+
+me_loss_prior2 <- marginal_effects(
+  m2, conditions = conditions, 
+  re_formula = NULL, method = "predict"
+)
+p1 <- plot(me_loss_prior2, ncol = 5, points = TRUE, plot = FALSE)
+p1$dev + ggtitle("Prior predictive distributions")
+```
+---
+
+### Model 
+
+```{r, eval=FALSE, tidy=F, echo=T}
+
+nlform2 <- bf(loss_ratio ~ log(ulr * (1 - exp(-(dev_year*phi)^omega))),
+             ulr ~ 1 + (1|AY), omega ~ 1, phi ~ 1, 
+             nl = TRUE)
+
+m2 <- brm(nlform2, data = loss, 
+  family = lognormal(link = "identity", link_sigma = "log"),
+  prior = c(
+    prior(lognormal(log(0.5), log(1.2)), nlpar = "ulr", lb=0),
+    prior(normal(1.25, 0.25), nlpar = "omega", lb=0),
+    prior(normal(0.25, 0.25), nlpar = "phi", lb=0),
+    prior(student_t(5, 0, 0.25), class = "sigma"),
+    prior(student_t(5, 0, 0.25), class = "sd", nlpar="ulr")
+    ), 
+    sample_prior = "no", seed = 1234
+)
+
+```
+
+---
+
+### Posterior parameter distributions
+
+```{r, echo=F}
+load("C:/Users/S0041359/Documents/R/bayesian/m1.Rdata")
+
+mcmc_areas(
+  as.array(fit_m1), 
+  pars = c("b_ulr_Intercept", "b_omega_Intercept",
+           "b_phi_Intercept",
+           "sd_AY__ulr_Intercept", "sigma"),
+  prob = 0.8, # 80% intervals
+  prob_outer = 0.99, # 99%
+  point_est = "mean"
+) + ggplot2::labs(
+  title = "Posterior parameter distributions",
+  subtitle = "with medians and 80% intervals"
+)
+
+```
+---
+
+### Posterior predictive distributions
+
+```{r, echo=F}
+
+me_loss_posterior <- marginal_effects(
+  fit_m1, conditions = conditions, 
+  re_formula = NULL, method = "predict"
+)
+p2 <- plot(me_loss_posterior, ncol = 5, points = TRUE, plot = FALSE)
+p2$dev + ggtitle("Posterior predictive distributions")
+
+
+```
+
+---
+
+## Pros and Cons of Bayesian method 
+
++ Pros
+  - more thoughtfull on  data generating models/ process
+  - Include prior knowledge 
+  - more flexible in model structure
+  
++ Cons 
+  - different mindset and could be difficult to set up 
+  - more time consuming to fit models 
+  - hard to scale to very large data 
+  
+  
+ 
+
+---
+## links
+ 
+https://mc-stan.org/
+
+https://cran.r-project.org/web/packages/brms/index.html
+
+???
+
+https://www.r-bloggers.com/2018/08/use-domain-knowledge-to-review-prior-distributions-2/
+
+
+
+
